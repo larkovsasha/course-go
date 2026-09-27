@@ -18,6 +18,10 @@ type Config struct {
 	DatabaseMaxConnLifetime time.Duration
 	DatabaseConnectTimeout  time.Duration
 	DatabaseQueryTimeout    time.Duration
+	HTTPReadTimeout         time.Duration
+	HTTPReadHeaderTimeout   time.Duration
+	HTTPWriteTimeout        time.Duration
+	HTTPIdleTimeout         time.Duration
 }
 
 func GetConfig() (Config, error) {
@@ -70,6 +74,26 @@ func GetConfig() (Config, error) {
 		return Config{}, err
 	}
 
+	httpReadTimeout, err := duration("HTTP_READ_TIMEOUT")
+	if err != nil {
+		return Config{}, err
+	}
+
+	httpReadHeaderTimeout, err := duration("HTTP_READ_HEADER_TIMEOUT")
+	if err != nil {
+		return Config{}, err
+	}
+
+	httpWriteTimeout, err := duration("HTTP_WRITE_TIMEOUT")
+	if err != nil {
+		return Config{}, err
+	}
+
+	httpIdleTimeout, err := duration("HTTP_IDLE_TIMEOUT")
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
 		HTTPAddr:                httpAddr,
 		DatabaseURL:             databaseURL,
@@ -80,6 +104,10 @@ func GetConfig() (Config, error) {
 		DatabaseMaxConnLifetime: maxConnLifetime,
 		DatabaseConnectTimeout:  connectTimeout,
 		DatabaseQueryTimeout:    queryTimeout,
+		HTTPReadTimeout:         httpReadTimeout,
+		HTTPReadHeaderTimeout:   httpReadHeaderTimeout,
+		HTTPWriteTimeout:        httpWriteTimeout,
+		HTTPIdleTimeout:         httpIdleTimeout,
 	}, nil
 }
 
