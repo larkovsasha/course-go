@@ -15,9 +15,11 @@ type TxManager interface {
 }
 
 type TripService struct {
-	tripRepo    *repository.TripRepository
-	historyRepo *repository.TripStatusHistoryRepository
-	txManageer  TxManager
+	tripRepo        *repository.TripRepository
+	historyRepo     *repository.TripStatusHistoryRepository
+	idempotencyRepo *repository.IdempotencyRepository
+	txManageer      TxManager
+	idempotencyTTl  time.Duration
 }
 
 type CreateTripInput struct {
@@ -30,21 +32,28 @@ type CreateTripInput struct {
 	EndLongitude   float64
 
 	Price int64
+
+	IdempotencyKey *uuid.UUID
+	RequestHash    string
 }
 
 func NewTripService(
 	tripRepo *repository.TripRepository,
 	historyRepo *repository.TripStatusHistoryRepository,
+	idempotencyRepo *repository.IdempotencyRepository,
 	txManageer TxManager,
+	idempotencyTTl time.Duration,
 ) *TripService {
 	return &TripService{
 		tripRepo,
 		historyRepo,
+		idempotencyRepo,
 		txManageer,
+		idempotencyTTl,
 	}
 }
 
-func (ts *TripService) Create(ctx context.Context, input CreateTripInput) (trip.Trip, error) {
+func (ts *TripService) Create(ctx context.Context, input CreateTripInput) (trip.Trip, bool, error) {
 	now := time.Now()
 
 	newTrip := trip.Trip{
@@ -73,7 +82,28 @@ func (ts *TripService) Create(ctx context.Context, input CreateTripInput) (trip.
 		ChangedAt:  now,
 	}
 
+	resultTrip := newTrip
+	resultReplayed := false
 	err := ts.txManageer.Do(ctx, func(txCtx context.Context) error {
+		if input.IdempotencyKey != nil {
+			idempotencyRecord := trip.IdempotencyRecord{
+				Key:         *input.IdempotencyKey,
+				RequestHash: input.RequestHash,
+				TripID:      newTrip.ID,
+				ExpiresAt:   now.Add(ts.idempotencyTTl),
+			}
+
+			existingTrip, replayed, err := ts.reserveOrLoadExisting(txCtx, idempotencyRecord)
+			if err != nil {
+				return err
+			}
+			if replayed {
+				resultReplayed = true
+				resultTrip = existingTrip
+				return nil
+			}
+		}
+
 		err := ts.tripRepo.Create(txCtx, newTrip)
 		if err != nil {
 			return err
@@ -86,9 +116,9 @@ func (ts *TripService) Create(ctx context.Context, input CreateTripInput) (trip.
 	})
 
 	if err != nil {
-		return trip.Trip{}, err
+		return trip.Trip{}, false, err
 	}
-	return newTrip, nil
+	return resultTrip, resultReplayed, nil
 }
 
 func (ts *TripService) GetByID(ctx context.Context, id uuid.UUID) (trip.Trip, error) {
@@ -132,4 +162,32 @@ func (ts *TripService) Finish(ctx context.Context, id uuid.UUID) (trip.Trip, err
 	}
 
 	return finishedTrip, nil
+}
+
+func (ts *TripService) reserveOrLoadExisting(
+	ctx context.Context,
+	idempotencyRecord trip.IdempotencyRecord,
+) (trip.Trip, bool, error) {
+	keyInserted, err := ts.idempotencyRepo.Create(ctx, idempotencyRecord)
+	if err != nil {
+		return trip.Trip{}, false, err
+	}
+
+	if keyInserted {
+		return trip.Trip{}, false, nil
+	}
+
+	oldRecord, err := ts.idempotencyRepo.GetByKey(ctx, idempotencyRecord.Key)
+	if err != nil {
+		return trip.Trip{}, false, err
+	}
+	if oldRecord.RequestHash != idempotencyRecord.RequestHash {
+		return trip.Trip{}, false, repository.ErrIdempotencyConflict
+	}
+
+	existingTrip, err := ts.tripRepo.GetByID(ctx, oldRecord.TripID)
+	if err != nil {
+		return trip.Trip{}, false, err
+	}
+	return existingTrip, true, nil
 }

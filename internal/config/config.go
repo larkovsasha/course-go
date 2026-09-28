@@ -9,19 +9,21 @@ import (
 )
 
 type Config struct {
-	HTTPAddr                string
-	LogLevel                string
-	ShutdownTimeout         time.Duration
-	DatabaseURL             string
-	DatabaseMaxConns        int32
-	DatabaseMinConns        int32
-	DatabaseMaxConnLifetime time.Duration
-	DatabaseConnectTimeout  time.Duration
-	DatabaseQueryTimeout    time.Duration
-	HTTPReadTimeout         time.Duration
-	HTTPReadHeaderTimeout   time.Duration
-	HTTPWriteTimeout        time.Duration
-	HTTPIdleTimeout         time.Duration
+	HTTPAddr                      string
+	LogLevel                      string
+	ShutdownTimeout               time.Duration
+	DatabaseURL                   string
+	DatabaseMaxConns              int32
+	DatabaseMinConns              int32
+	DatabaseMaxConnLifetime       time.Duration
+	DatabaseConnectTimeout        time.Duration
+	DatabaseQueryTimeout          time.Duration
+	HTTPReadTimeout               time.Duration
+	HTTPReadHeaderTimeout         time.Duration
+	HTTPWriteTimeout              time.Duration
+	HTTPIdleTimeout               time.Duration
+	IdempotencyTTL                time.Duration
+	IdempotencyTTLCleanupInterval time.Duration
 }
 
 func GetConfig() (Config, error) {
@@ -94,20 +96,32 @@ func GetConfig() (Config, error) {
 		return Config{}, err
 	}
 
+	idempotencyTTL, err := duration("IDEMPOTENCY_TTL")
+	if err != nil {
+		return Config{}, err
+	}
+
+	idempotencyCleanupInterval, err := duration("IDEMPOTENCY_CLEANUP_INTERVAL")
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
-		HTTPAddr:                httpAddr,
-		DatabaseURL:             databaseURL,
-		LogLevel:                logLevel,
-		ShutdownTimeout:         shutdownTimeout,
-		DatabaseMaxConns:        maxConns,
-		DatabaseMinConns:        minConns,
-		DatabaseMaxConnLifetime: maxConnLifetime,
-		DatabaseConnectTimeout:  connectTimeout,
-		DatabaseQueryTimeout:    queryTimeout,
-		HTTPReadTimeout:         httpReadTimeout,
-		HTTPReadHeaderTimeout:   httpReadHeaderTimeout,
-		HTTPWriteTimeout:        httpWriteTimeout,
-		HTTPIdleTimeout:         httpIdleTimeout,
+		HTTPAddr:                      httpAddr,
+		DatabaseURL:                   databaseURL,
+		LogLevel:                      logLevel,
+		ShutdownTimeout:               shutdownTimeout,
+		DatabaseMaxConns:              maxConns,
+		DatabaseMinConns:              minConns,
+		DatabaseMaxConnLifetime:       maxConnLifetime,
+		DatabaseConnectTimeout:        connectTimeout,
+		DatabaseQueryTimeout:          queryTimeout,
+		HTTPReadTimeout:               httpReadTimeout,
+		HTTPReadHeaderTimeout:         httpReadHeaderTimeout,
+		HTTPWriteTimeout:              httpWriteTimeout,
+		HTTPIdleTimeout:               httpIdleTimeout,
+		IdempotencyTTL:                idempotencyTTL,
+		IdempotencyTTLCleanupInterval: idempotencyCleanupInterval,
 	}, nil
 }
 

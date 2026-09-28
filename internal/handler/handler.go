@@ -3,6 +3,8 @@ package handler
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -105,16 +107,28 @@ func (h *Handler) CreateTrip(w http.ResponseWriter, r *http.Request, params api.
 		EndLongitude:   request.EndPoint.Longitude,
 		Price:          request.Price,
 	}
-	trip, err := h.tripService.Create(ctx, input)
+	if params.IdempotencyKey != nil {
+		hash := sha256.Sum256(body)
+		input.IdempotencyKey = params.IdempotencyKey
+		input.RequestHash = string(hex.EncodeToString(hash[:]))
+	}
+
+	trip, replayed, err := h.tripService.Create(ctx, input)
 	if err != nil {
 		writeServiceError(ctx, w, err, r.URL.Path)
 		return
 	}
 
+	status := http.StatusCreated
+	if replayed {
+		status = http.StatusOK
+	}
+
 	response := toAPITrip(trip)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Location", "/api/v1/trips/"+trip.ID.String())
-	w.WriteHeader(http.StatusCreated)
+	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Printf("write create trip response: %v", err)
 	}

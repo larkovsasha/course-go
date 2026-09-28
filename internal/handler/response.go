@@ -42,6 +42,12 @@ func writeServiceError(ctx context.Context, w http.ResponseWriter, err error, in
 		problem.Status = http.StatusConflict
 		problem.Code = "driver_busy"
 		detail = "Driver already has an active trip"
+	case errors.Is(err, repository.ErrIdempotencyConflict):
+		problem.Type = "https://tripgo.example/problems/idempotency-conflict"
+		problem.Title = "Idempotency conflict"
+		problem.Status = http.StatusConflict
+		problem.Code = "idempotency_conflict"
+		detail = "Idempotency-Key was already used with a different request body"
 	default:
 		log.Printf("handle request %s: %v", instance, err)
 	}

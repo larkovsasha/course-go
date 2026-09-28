@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -28,12 +27,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to connect to PostgreSQL: %v", err)
 	}
-	defer pool.Close()
 
 	tripRepo := repository.NewTripRepository(pool, cfg.DatabaseQueryTimeout)
 	historyRepo := repository.NewTripStatusHistoryRepository(pool, cfg.DatabaseQueryTimeout)
+	idempotencyRepo := repository.NewIdempotencyRepository(pool, cfg.DatabaseQueryTimeout)
 	txManager := postgres.NewTransactionManager(pool, cfg.DatabaseQueryTimeout)
-	tripService := service.NewTripService(tripRepo, historyRepo, txManager)
+	tripService := service.NewTripService(tripRepo, historyRepo, idempotencyRepo, txManager, cfg.IdempotencyTTL)
 	httpHandler := handler.NewHandler(tripService, pool, cfg.DatabaseQueryTimeout)
 	router := handler.NewRouter(httpHandler)
 
@@ -49,6 +48,14 @@ func main() {
 	notifyCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	cleanupDone := make(chan struct{})
+	go runIdempotencyCleanup(
+		notifyCtx,
+		idempotencyRepo,
+		cfg.IdempotencyTTLCleanupInterval,
+		cleanupDone,
+	)
+
 	ch := make(chan error, 1)
 	go func() {
 		ch <- server.ListenAndServe()
@@ -56,9 +63,10 @@ func main() {
 
 	select {
 	case err := <-ch:
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			pool.Close()
-			stop()
+		stop()
+		<-cleanupDone
+		pool.Close()
+		if err != nil {
 			log.Fatalf("HTTP server failed: %v", err)
 		}
 	case <-notifyCtx.Done():
@@ -72,8 +80,48 @@ func main() {
 			log.Printf("Failed to stop server: %v", err)
 		}
 
+		<-cleanupDone
 		pool.Close()
 		timer.Stop()
+	}
+
+}
+
+func runIdempotencyCleanup(
+	ctx context.Context,
+	repo *repository.IdempotencyRepository,
+	interval time.Duration,
+	done chan<- struct{},
+) {
+	defer close(done)
+
+	cleanup := func() {
+		deleted, err := repo.DeleteExpired(ctx)
+		if err != nil {
+			if ctx.Err() == nil {
+				log.Printf("delete expired idempotency keys: %v", err)
+			}
+			return
+		}
+		if deleted > 0 {
+			log.Printf("deleted expired idempotency keys: %d", deleted)
+		}
+	}
+
+	cleanup()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if ctx.Err() != nil {
+				return
+			}
+			cleanup()
+		}
 	}
 
 }
