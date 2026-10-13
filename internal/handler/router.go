@@ -12,7 +12,7 @@ func NewRouter(handler *Handler) http.Handler {
 	return api.HandlerWithOptions(handler, api.ChiServerOptions{
 		BaseRouter: router,
 		ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, _ error) {
-			writeInvalidRequest(r.Context(), w, r.URL.Path)
+			writeInvalidRequest(r.Context(), w, r.URL.Path, "Request validation failed")
 		},
 	})
 }

@@ -36,6 +36,11 @@ func (tm *TransactionManager) Do(ctx context.Context, callback func(context.Cont
 	}
 
 	defer func() {
+		panicValue := recover()
+		if panicValue == nil && resultErr == nil {
+			return
+		}
+
 		rollbackCtx, rollbackCancel := context.WithTimeout(
 			context.WithoutCancel(ctx),
 			tm.timeout,
@@ -43,8 +48,12 @@ func (tm *TransactionManager) Do(ctx context.Context, callback func(context.Cont
 		defer rollbackCancel()
 
 		rollbackErr := tx.Rollback(rollbackCtx)
+		if panicValue != nil {
+			panic(panicValue)
+		}
+
 		if rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
-			resultErr = errors.Join(resultErr, fmt.Errorf("Rollback transaction %w", rollbackErr))
+			resultErr = errors.Join(resultErr, fmt.Errorf("rollback transaction: %w", rollbackErr))
 		}
 	}()
 

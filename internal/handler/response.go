@@ -79,8 +79,7 @@ func toAPITrip(value trip.Trip) api.Trip {
 	}
 }
 
-func writeInvalidRequest(ctx context.Context, w http.ResponseWriter, instance string) {
-	detail := "Request validation failed"
+func writeInvalidRequest(ctx context.Context, w http.ResponseWriter, instance string, detail string) {
 	problem := api.Problem{
 		Type:     "https://tripgo.example/problems/invalid-request",
 		Title:    "Invalid request",

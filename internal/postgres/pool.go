@@ -29,7 +29,7 @@ func GetPool(
 	pingCtx, cancel := context.WithTimeout(ctx, config.DatabaseConnectTimeout)
 	defer cancel()
 
-	if err := pool.Ping(pingCtx); err != nil {
+	if err = pool.Ping(pingCtx); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("ping database: %w", err)
 	}

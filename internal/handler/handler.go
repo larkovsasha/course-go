@@ -1,12 +1,10 @@
 package handler
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -70,42 +68,30 @@ func (h *Handler) CreateTrip(w http.ResponseWriter, r *http.Request, params api.
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeInvalidRequest(ctx, w, r.URL.Path)
+		writeInvalidRequest(ctx, w, r.URL.Path, "Could not read request body")
 		return
 	}
 
-	reader := bytes.NewReader(body)
-	decoder := json.NewDecoder(reader)
-	decoder.DisallowUnknownFields()
-
-	request := api.CreateTripJSONRequestBody{}
-	err = decoder.Decode(&request)
+	parsedRequest, err := decodeCreateTrip(body)
 	if err != nil {
-		writeInvalidRequest(ctx, w, r.URL.Path)
+		writeInvalidRequest(ctx, w, r.URL.Path, err.Error())
 		return
 	}
 
-	var extra any
-	err = decoder.Decode(&extra)
-	if !errors.Is(err, io.EOF) {
-		writeInvalidRequest(ctx, w, r.URL.Path)
-		return
-	}
-
-	err = validateCreateTrip(body, request)
+	err = validateCreateTrip(parsedRequest)
 	if err != nil {
-		writeInvalidRequest(ctx, w, r.URL.Path)
+		writeInvalidRequest(ctx, w, r.URL.Path, err.Error())
 		return
 	}
 
 	input := service.CreateTripInput{
-		UserID:         request.UserId,
-		DriverID:       request.DriverId,
-		StartLatitude:  request.StartPoint.Latitude,
-		StartLongitude: request.StartPoint.Longitude,
-		EndLatitude:    request.EndPoint.Latitude,
-		EndLongitude:   request.EndPoint.Longitude,
-		Price:          request.Price,
+		UserID:         *parsedRequest.UserID,
+		DriverID:       *parsedRequest.DriverID,
+		StartLatitude:  *parsedRequest.StartPoint.Latitude,
+		StartLongitude: *parsedRequest.StartPoint.Longitude,
+		EndLatitude:    *parsedRequest.EndPoint.Latitude,
+		EndLongitude:   *parsedRequest.EndPoint.Longitude,
+		Price:          *parsedRequest.Price,
 	}
 	if params.IdempotencyKey != nil {
 		hash := sha256.Sum256(body)

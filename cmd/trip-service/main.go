@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -45,7 +46,7 @@ func main() {
 		IdleTimeout:       cfg.HTTPIdleTimeout,
 	}
 
-	notifyCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	notifyCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	cleanupDone := make(chan struct{})
@@ -75,7 +76,13 @@ func main() {
 			os.Exit(1)
 		})
 
-		err = server.Shutdown(ctx)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+		err = server.Shutdown(shutdownCtx)
+		cancel()
+		if errors.Is(err, context.DeadlineExceeded) {
+			log.Printf("Shutdown timeout exceeded")
+			os.Exit(1)
+		}
 		if err != nil {
 			log.Printf("Failed to stop server: %v", err)
 		}
