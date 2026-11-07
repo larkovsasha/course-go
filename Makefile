@@ -3,7 +3,7 @@ ifneq (,$(wildcard ./.env))
     export
 endif
 
-.PHONY: generate migrate run test lint
+.PHONY: generate migrate run test test-integration lint
 
 generate:
 	go tool oapi-codegen -config openapi.yaml contracts/openapi/trip-service.openapi.yaml
@@ -17,6 +17,9 @@ run:
 
 test:
 	go test -race ./...
+
+test-integration:
+	go test -race -count=2 -tags=integration ./internal/repository/...
 
 lint:
 	golangci-lint run ./...
