@@ -11,5 +11,7 @@ import (
 )
 
 type tripRepository interface {
+	Create(ctx context.Context, value trip.Trip) error
 	GetByID(ctx context.Context, id uuid.UUID) (trip.Trip, error)
+	Finish(ctx context.Context, value trip.Trip) error
 }

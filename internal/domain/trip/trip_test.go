@@ -85,3 +85,20 @@ func TestValidationError(t *testing.T) {
 		})
 	}
 }
+
+func TestTripFinishRejectedPreservesState(t *testing.T) {
+	previousTime := time.Date(2026, time.November, 6, 12, 0, 0, 0, time.UTC)
+	for _, status := range []trip.Status{trip.Completed, trip.Status("unknown")} {
+		t.Run(string(status), func(t *testing.T) {
+			wantFinishedAt := previousTime
+			value := trip.Trip{Status: status, FinishedAt: &previousTime, UpdatedAt: previousTime}
+			before := value
+			if err := value.Finish(previousTime.Add(time.Hour)); !errors.Is(err, trip.ErrTripCompleted) {
+				t.Fatalf("Finish() error = %v, want %v", err, trip.ErrTripCompleted)
+			}
+			if value != before || !value.FinishedAt.Equal(wantFinishedAt) {
+				t.Errorf("Finish() changed a rejected trip: before = %+v, after = %+v", before, value)
+			}
+		})
+	}
+}

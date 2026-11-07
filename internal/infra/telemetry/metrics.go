@@ -35,7 +35,8 @@ func NewTripMetrics(meterProvider metric.MeterProvider, trips activeTrips) (*Tri
 	registration, err := meter.RegisterCallback(func(ctx context.Context, observer metric.Observer) error {
 		count, err := trips.CountActive(ctx)
 		if err != nil {
-			return fmt.Errorf("count active trips: %w", err)
+			observer.ObserveInt64(active, 0)
+			return nil
 		}
 		observer.ObserveInt64(active, count)
 		return nil

@@ -42,6 +42,34 @@ func (m *MocktripRepository) EXPECT() *MocktripRepositoryMockRecorder {
 	return m.recorder
 }
 
+// Create mocks base method.
+func (m *MocktripRepository) Create(ctx context.Context, value trip.Trip) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Create", ctx, value)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Create indicates an expected call of Create.
+func (mr *MocktripRepositoryMockRecorder) Create(ctx, value any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Create", reflect.TypeOf((*MocktripRepository)(nil).Create), ctx, value)
+}
+
+// Finish mocks base method.
+func (m *MocktripRepository) Finish(ctx context.Context, value trip.Trip) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Finish", ctx, value)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Finish indicates an expected call of Finish.
+func (mr *MocktripRepositoryMockRecorder) Finish(ctx, value any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Finish", reflect.TypeOf((*MocktripRepository)(nil).Finish), ctx, value)
+}
+
 // GetByID mocks base method.
 func (m *MocktripRepository) GetByID(ctx context.Context, id uuid.UUID) (trip.Trip, error) {
 	m.ctrl.T.Helper()
