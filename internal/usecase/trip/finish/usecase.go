@@ -15,6 +15,7 @@ type Usecase struct {
 	tripRepo    tripRepository
 	historyRepo historyRepository
 	txManager   txManager
+	metrics     tripMetrics
 	logger      *slog.Logger
 }
 
@@ -22,12 +23,14 @@ func New(
 	tripRepo tripRepository,
 	historyRepo historyRepository,
 	txManager txManager,
+	metrics tripMetrics,
 	logger *slog.Logger,
 ) *Usecase {
 	return &Usecase{
 		tripRepo:    tripRepo,
 		historyRepo: historyRepo,
 		txManager:   txManager,
+		metrics:     metrics,
 		logger:      logger,
 	}
 }
@@ -67,5 +70,6 @@ func (u *Usecase) Execute(ctx context.Context, id uuid.UUID) (trip.Trip, error) 
 	}
 
 	u.logger.InfoContext(ctx, "trip completed", "trip_id", result.ID.String())
+	u.metrics.TripCompleted(ctx)
 	return result, nil
 }

@@ -28,4 +28,8 @@ type (
 	txManager interface {
 		Do(ctx context.Context, callback func(context.Context) error) error
 	}
+
+	tripMetrics interface {
+		TripCreated(ctx context.Context)
+	}
 )

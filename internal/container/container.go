@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
@@ -18,6 +16,7 @@ import (
 	gethandler "github.com/larkovsasha/course-go/internal/http/trip/get"
 	"github.com/larkovsasha/course-go/internal/infra/postgres"
 	"github.com/larkovsasha/course-go/internal/infra/postgres/transaction"
+	"github.com/larkovsasha/course-go/internal/infra/telemetry"
 	triprepository "github.com/larkovsasha/course-go/internal/repository/trip"
 	createusecase "github.com/larkovsasha/course-go/internal/usecase/trip/create"
 	finishusecase "github.com/larkovsasha/course-go/internal/usecase/trip/finish"
@@ -30,20 +29,28 @@ type Container struct {
 	cleanupWorker   *idempotencycleanup.Worker
 	closeDatabase   func()
 	shutdwonTimeout time.Duration
-	logger          *slog.Logger
+	telemetry       *telemetry.Telemetry
+	tripMetrics     *telemetry.TripMetrics
 }
 
 func New(ctx context.Context, cfg *config.Config) (*Container, error) {
-	logLevel := new(slog.LevelVar)
-	if err := logLevel.UnmarshalText([]byte(cfg.LogLevel)); err != nil {
-		return nil, fmt.Errorf("parse log level: %w", err)
-	}
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel})).With(
-		"service", "trip-service",
-	)
-
-	pool, err := postgres.NewPool(ctx, cfg)
+	serviceTelemetry, err := telemetry.New(ctx, cfg)
 	if err != nil {
+		return nil, err
+	}
+
+	pgxTracer, err := telemetry.NewPGXTracer(
+		serviceTelemetry.TracerProvider,
+		serviceTelemetry.MeterProvider,
+	)
+	if err != nil {
+		_ = serviceTelemetry.Shutdown(ctx)
+		return nil, err
+	}
+
+	pool, err := postgres.NewPool(ctx, cfg, pgxTracer)
+	if err != nil {
+		_ = serviceTelemetry.Shutdown(ctx)
 		return nil, err
 	}
 
@@ -51,27 +58,41 @@ func New(ctx context.Context, cfg *config.Config) (*Container, error) {
 	histroyRepo := triprepository.NewHistoryRepository(pool, cfg.DatabaseQueryTimeout)
 	idempotencyRepo := triprepository.NewIdempotencyRepository(pool, cfg.DatabaseQueryTimeout)
 	txManager := transaction.NewManager(pool, cfg.DatabaseQueryTimeout)
+	tripMetrics, err := telemetry.NewTripMetrics(serviceTelemetry.MeterProvider, tripRepo)
+	if err != nil {
+		pool.Close()
+		_ = serviceTelemetry.Shutdown(ctx)
+		return nil, err
+	}
+	httpMetrics, err := telemetry.NewHTTPMetrics(serviceTelemetry.MeterProvider)
+	if err != nil {
+		_ = tripMetrics.Close()
+		pool.Close()
+		_ = serviceTelemetry.Shutdown(ctx)
+		return nil, err
+	}
 
 	createUsecase := createusecase.New(
 		tripRepo,
 		histroyRepo,
 		idempotencyRepo,
 		txManager,
-		logger,
+		tripMetrics,
+		serviceTelemetry.Logger,
 		cfg.IdempotencyTTL,
 	)
 	getUsecase := getusecase.New(tripRepo)
-	finishUsecase := finishusecase.New(tripRepo, histroyRepo, txManager, logger)
+	finishUsecase := finishusecase.New(tripRepo, histroyRepo, txManager, tripMetrics, serviceTelemetry.Logger)
 
-	createHandler := createhandler.NewHandler(createUsecase, logger)
-	getHandler := gethandler.NewHandler(getUsecase, logger)
-	finishHandler := finishhandler.NewHandler(finishUsecase, logger)
-	healthHandler := health.NewHandler(pool, cfg.DatabaseQueryTimeout, logger)
+	createHandler := createhandler.NewHandler(createUsecase, serviceTelemetry.Logger)
+	getHandler := gethandler.NewHandler(getUsecase, serviceTelemetry.Logger)
+	finishHandler := finishhandler.NewHandler(finishUsecase, serviceTelemetry.Logger)
+	healthHandler := health.NewHandler(pool, cfg.DatabaseQueryTimeout, serviceTelemetry.Logger)
 	httpHandler := router.NewHandler(createHandler, getHandler, finishHandler, healthHandler)
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           router.New(httpHandler, logger),
+		Handler:           router.New(httpHandler, serviceTelemetry.Logger, httpMetrics),
 		ReadTimeout:       cfg.HTTPReadTimeout,
 		ReadHeaderTimeout: cfg.HTTPReadHeaderTimeout,
 		WriteTimeout:      cfg.HTTPWriteTimeout,
@@ -79,11 +100,16 @@ func New(ctx context.Context, cfg *config.Config) (*Container, error) {
 	}
 
 	return &Container{
-		server:          server,
-		cleanupWorker:   idempotencycleanup.New(idempotencyRepo, cfg.IdempotencyTTLCleanupInterval, logger),
+		server: server,
+		cleanupWorker: idempotencycleanup.New(
+			idempotencyRepo,
+			cfg.IdempotencyTTLCleanupInterval,
+			serviceTelemetry.Logger,
+		),
 		closeDatabase:   pool.Close,
 		shutdwonTimeout: cfg.ShutdownTimeout,
-		logger:          logger,
+		telemetry:       serviceTelemetry,
+		tripMetrics:     tripMetrics,
 	}, nil
 }
 
@@ -101,16 +127,17 @@ func (c *Container) Run(ctx context.Context) error {
 
 	serverErr := make(chan error, 1)
 	go func() {
-		c.logger.Info("service started", "address", c.server.Addr)
+		c.telemetry.Logger.Info("service started", "address", c.server.Addr)
 		serverErr <- c.server.ListenAndServe()
 	}()
 
+	var runErr error
 	select {
 	case err := <-serverErr:
 		cancel()
 		workers.Wait()
 		if !errors.Is(err, http.ErrServerClosed) {
-			return fmt.Errorf("run HTTP server: %w", err)
+			runErr = fmt.Errorf("run HTTP server: %w", err)
 		}
 	case <-ctx.Done():
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.WithoutCancel(ctx), c.shutdwonTimeout)
@@ -120,10 +147,18 @@ func (c *Container) Run(ctx context.Context) error {
 		cancel()
 		workers.Wait()
 		if shutdownErr != nil {
-			return fmt.Errorf("shutdown HTTP server: %w", shutdownErr)
+			runErr = fmt.Errorf("shutdown HTTP server: %w", shutdownErr)
 		}
 	}
 
-	c.logger.Info("service stopped")
-	return nil
+	c.telemetry.Logger.Info("service stopped")
+	telemetryCtx, telemetryCancel := context.WithTimeout(context.WithoutCancel(ctx), c.shutdwonTimeout)
+	defer telemetryCancel()
+
+	telemetryErr := errors.Join(c.tripMetrics.Close(), c.telemetry.Shutdown(telemetryCtx))
+	if telemetryErr != nil {
+		c.telemetry.Logger.Error("stop telemetry", "error", telemetryErr)
+	}
+
+	return runErr
 }

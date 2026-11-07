@@ -31,6 +31,7 @@ type Usecase struct {
 	historyRepo     historyRepository
 	idempotencyRepo idempotencyRepository
 	txManager       txManager
+	metrics         tripMetrics
 	logger          *slog.Logger
 	idempotencyTTL  time.Duration
 }
@@ -40,6 +41,7 @@ func New(
 	historyRepo historyRepository,
 	idempotencyRepo idempotencyRepository,
 	txManager txManager,
+	metrics tripMetrics,
 	logger *slog.Logger,
 	idempotencyTTL time.Duration,
 ) *Usecase {
@@ -48,6 +50,7 @@ func New(
 		historyRepo:     historyRepo,
 		idempotencyRepo: idempotencyRepo,
 		txManager:       txManager,
+		metrics:         metrics,
 		logger:          logger,
 		idempotencyTTL:  idempotencyTTL,
 	}
@@ -113,6 +116,7 @@ func (u *Usecase) Execute(ctx context.Context, input Input) (trip.Trip, bool, er
 
 	if !replayed {
 		u.logger.InfoContext(ctx, "trip created", "trip_id", result.ID.String())
+		u.metrics.TripCreated(ctx)
 	}
 
 	return result, replayed, nil

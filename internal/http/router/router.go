@@ -10,9 +10,11 @@ import (
 	api "github.com/larkovsasha/course-go/internal/generated"
 	"github.com/larkovsasha/course-go/internal/http/domainerror"
 	"github.com/larkovsasha/course-go/internal/http/health"
+	tripmiddleware "github.com/larkovsasha/course-go/internal/http/middleware"
 	createhandler "github.com/larkovsasha/course-go/internal/http/trip/create"
 	finishhandler "github.com/larkovsasha/course-go/internal/http/trip/finish"
 	gethandler "github.com/larkovsasha/course-go/internal/http/trip/get"
+	"github.com/larkovsasha/course-go/internal/infra/telemetry"
 )
 
 type Handler struct {
@@ -51,10 +53,19 @@ func (h *Handler) Ready(w http.ResponseWriter, r *http.Request) {
 	h.health.Ready(w, r)
 }
 
-func New(handler *Handler, logger *slog.Logger) http.Handler {
+func New(handler *Handler, logger *slog.Logger, metrics *telemetry.HTTPMetrics) http.Handler {
 	baseRouter := chi.NewRouter()
-	return api.HandlerWithOptions(handler, api.ChiServerOptions{
+	generatedHandler := api.HandlerWithOptions(handler, api.ChiServerOptions{
 		BaseRouter: baseRouter,
+		Middlewares: []api.MiddlewareFunc{
+			func(next http.Handler) http.Handler {
+				return tripmiddleware.Metrics(next, metrics)
+			},
+			func(next http.Handler) http.Handler {
+				return tripmiddleware.Logging(next, logger)
+			},
+			tripmiddleware.Tracing,
+		},
 		ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, _ error) {
 			domainerror.Write(
 				r.Context(),
@@ -65,4 +76,6 @@ func New(handler *Handler, logger *slog.Logger) http.Handler {
 			)
 		},
 	})
+
+	return tripmiddleware.Recover(generatedHandler, logger)
 }

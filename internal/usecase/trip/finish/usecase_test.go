@@ -18,6 +18,7 @@ type finishDependencies struct {
 	tripRepo    *MocktripRepository
 	historyRepo *MockhistoryRepository
 	txManager   *MocktxManager
+	metrics     *MocktripMetrics
 	usecase     *finish.Usecase
 }
 
@@ -28,13 +29,15 @@ func newFinishDependencies(t *testing.T) finishDependencies {
 	tripRepo := NewMocktripRepository(controller)
 	historyRepo := NewMockhistoryRepository(controller)
 	txManager := NewMocktxManager(controller)
+	metrics := NewMocktripMetrics(controller)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	return finishDependencies{
 		tripRepo:    tripRepo,
 		historyRepo: historyRepo,
 		txManager:   txManager,
-		usecase:     finish.New(tripRepo, historyRepo, txManager, logger),
+		metrics:     metrics,
+		usecase:     finish.New(tripRepo, historyRepo, txManager, metrics, logger),
 	}
 }
 
@@ -49,6 +52,7 @@ func executeFinishTransaction(mock *MocktxManager) {
 func TestUsecaseExecuteSuccess(t *testing.T) {
 	dependencies := newFinishDependencies(t)
 	executeFinishTransaction(dependencies.txManager)
+	dependencies.metrics.EXPECT().TripCompleted(gomock.Any())
 	id := uuid.New()
 	activeTrip := trip.Trip{ID: id, Status: trip.Active}
 

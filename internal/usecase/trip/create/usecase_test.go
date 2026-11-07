@@ -20,6 +20,7 @@ type createDependencies struct {
 	historyRepo     *MockhistoryRepository
 	idempotencyRepo *MockidempotencyRepository
 	txManager       *MocktxManager
+	metrics         *MocktripMetrics
 	usecase         *create.Usecase
 }
 
@@ -31,6 +32,7 @@ func newCreateDependencies(t *testing.T) createDependencies {
 	historyRepo := NewMockhistoryRepository(controller)
 	idempotencyRepo := NewMockidempotencyRepository(controller)
 	txManager := NewMocktxManager(controller)
+	metrics := NewMocktripMetrics(controller)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	return createDependencies{
@@ -38,11 +40,13 @@ func newCreateDependencies(t *testing.T) createDependencies {
 		historyRepo:     historyRepo,
 		idempotencyRepo: idempotencyRepo,
 		txManager:       txManager,
+		metrics:         metrics,
 		usecase: create.New(
 			tripRepo,
 			historyRepo,
 			idempotencyRepo,
 			txManager,
+			metrics,
 			logger,
 			24*time.Hour,
 		),
@@ -72,6 +76,7 @@ func validCreateInput() create.Input {
 func TestUsecaseExecuteSuccess(t *testing.T) {
 	dependencies := newCreateDependencies(t)
 	executeTransaction(dependencies.txManager)
+	dependencies.metrics.EXPECT().TripCreated(gomock.Any())
 
 	var createdTrip trip.Trip
 	dependencies.tripRepo.EXPECT().

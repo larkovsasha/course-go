@@ -24,6 +24,11 @@ type Config struct {
 	HTTPIdleTimeout               time.Duration
 	IdempotencyTTL                time.Duration
 	IdempotencyTTLCleanupInterval time.Duration
+	OTELServiceName               string
+	OTLPEndpoint                  string
+	OTLPProtocol                  string
+	OTELResourceAttributes        string
+	OTELTracesSampler             string
 }
 
 func GetConfig() (Config, error) {
@@ -106,6 +111,34 @@ func GetConfig() (Config, error) {
 		return Config{}, err
 	}
 
+	otelServiceName, err := readField("OTEL_SERVICE_NAME")
+	if err != nil {
+		return Config{}, err
+	}
+
+	otlpEndpoint, err := readField("OTEL_EXPORTER_OTLP_ENDPOINT")
+	if err != nil {
+		return Config{}, err
+	}
+
+	otlpProtocol, err := readField("OTEL_EXPORTER_OTLP_PROTOCOL")
+	if err != nil {
+		return Config{}, err
+	}
+	if otlpProtocol != "http/protobuf" {
+		return Config{}, errors.New("otel exporter protocol must be http/protobuf")
+	}
+
+	otelResourceAttributes, err := readField("OTEL_RESOURCE_ATTRIBUTES")
+	if err != nil {
+		return Config{}, err
+	}
+
+	otelTracesSampler, err := readField("OTEL_TRACES_SAMPLER")
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
 		HTTPAddr:                      httpAddr,
 		DatabaseURL:                   databaseURL,
@@ -122,6 +155,11 @@ func GetConfig() (Config, error) {
 		HTTPIdleTimeout:               httpIdleTimeout,
 		IdempotencyTTL:                idempotencyTTL,
 		IdempotencyTTLCleanupInterval: idempotencyCleanupInterval,
+		OTELServiceName:               otelServiceName,
+		OTLPEndpoint:                  otlpEndpoint,
+		OTLPProtocol:                  otlpProtocol,
+		OTELResourceAttributes:        otelResourceAttributes,
+		OTELTracesSampler:             otelTracesSampler,
 	}, nil
 }
 

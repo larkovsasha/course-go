@@ -169,3 +169,26 @@ func (r *Repository) Finish(ctx context.Context, value domaintrip.Trip) error {
 
 	return domaintrip.ErrTripCompleted
 }
+
+func (r *Repository) CountActive(ctx context.Context) (int64, error) {
+	executor := postgres.GetExecutor(ctx, r.pool)
+	query := sq.Select("COUNT(*)").
+		From("trips").
+		Where(sq.Eq{"status": domaintrip.Active}).
+		PlaceholderFormat(sq.Dollar)
+
+	querySQL, args, err := query.ToSql()
+	if err != nil {
+		return 0, fmt.Errorf("build count active trips query: %w", err)
+	}
+
+	queryCtx, cancel := context.WithTimeout(ctx, r.timeout)
+	defer cancel()
+
+	var count int64
+	if err := executor.QueryRow(queryCtx, querySQL, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count active trips: %w", err)
+	}
+
+	return count, nil
+}
