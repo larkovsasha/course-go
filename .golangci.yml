@@ -50,6 +50,8 @@ linters:
               desc: домен не строит SQL
             - pkg: go.opentelemetry.io/otel
               desc: домен не знает про телеметрию
+            - pkg: github.com/larkovsasha/course-go/internal/generated
+              desc: домен не знает про HTTP-контракт
         usecase:
           files:
             - "**/internal/usecase/**"
@@ -62,6 +64,16 @@ linters:
               desc: usecase работает через интерфейсы, а не через драйвер бд
             - pkg: github.com/Masterminds/squirrel
               desc: usecase не строит SQL
+            - pkg: github.com/larkovsasha/course-go/internal/generated
+              desc: usecase не знает про HTTP-контракт
+        http:
+          files:
+            - "**/internal/http/**"
+          deny:
+            - pkg: github.com/larkovsasha/course-go/internal/repository
+              desc: транспорт работает через usecase
+            - pkg: github.com/larkovsasha/course-go/internal/infra
+              desc: транспорт получает зависимости через интерфейсы
 
     forbidigo:
       forbid:

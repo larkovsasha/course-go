@@ -68,7 +68,7 @@ func Write(
 ) {
 	status, problem := Problem(err, instance)
 	if status >= http.StatusInternalServerError {
-		logger.ErrorContext(ctx, "requset failed", "path", instance, "error", err)
+		logger.ErrorContext(ctx, "request failed", "path", instance, "error", err)
 	}
 
 	w.Header().Set("Content-Type", "application/problem+json")

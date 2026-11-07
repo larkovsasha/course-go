@@ -97,7 +97,8 @@ func TestUsecaseExecuteSuccess(t *testing.T) {
 			return nil
 		})
 
-	result, replayed, err := dependencies.usecase.Execute(context.Background(), validCreateInput())
+	input := validCreateInput()
+	result, replayed, err := dependencies.usecase.Execute(context.Background(), input)
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -109,6 +110,17 @@ func TestUsecaseExecuteSuccess(t *testing.T) {
 	}
 	if result.Status != trip.Active {
 		t.Errorf("Execute() status = %s, want %s", result.Status, trip.Active)
+	}
+	if result != createdTrip {
+		t.Errorf("returned trip differs from the saved trip")
+	}
+	if result.UserID != input.UserID || result.DriverID != input.DriverID || result.Price != input.Price ||
+		result.StartLatitude != input.StartLatitude || result.StartLongitude != input.StartLongitude ||
+		result.EndLatitude != input.EndLatitude || result.EndLongitude != input.EndLongitude {
+		t.Errorf("created trip lost input fields: %+v", result)
+	}
+	if result.StartedAt.IsZero() || result.StartedAt != result.CreatedAt || result.StartedAt != result.UpdatedAt || result.FinishedAt != nil {
+		t.Errorf("invalid initial trip timestamps: %+v", result)
 	}
 }
 

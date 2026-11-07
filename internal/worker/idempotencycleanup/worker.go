@@ -17,7 +17,7 @@ func New(repository repository, interval time.Duration, logger *slog.Logger) *Wo
 }
 
 func (w *Worker) Run(ctx context.Context) {
-	w.logger.InfoContext(ctx, "idempotency celanup started")
+	w.logger.InfoContext(ctx, "idempotency cleanup started")
 	defer w.logger.Info("idempotency cleanup stopped")
 
 	w.cleanup(ctx)

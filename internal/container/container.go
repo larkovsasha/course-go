@@ -28,7 +28,7 @@ type Container struct {
 	server          *http.Server
 	cleanupWorker   *idempotencycleanup.Worker
 	closeDatabase   func()
-	shutdwonTimeout time.Duration
+	shutdownTimeout time.Duration
 	telemetry       *telemetry.Telemetry
 	tripMetrics     *telemetry.TripMetrics
 }
@@ -55,7 +55,7 @@ func New(ctx context.Context, cfg *config.Config) (*Container, error) {
 	}
 
 	tripRepo := triprepository.NewRepository(pool, cfg.DatabaseQueryTimeout)
-	histroyRepo := triprepository.NewHistoryRepository(pool, cfg.DatabaseQueryTimeout)
+	historyRepo := triprepository.NewHistoryRepository(pool, cfg.DatabaseQueryTimeout)
 	idempotencyRepo := triprepository.NewIdempotencyRepository(pool, cfg.DatabaseQueryTimeout)
 	txManager := transaction.NewManager(pool, cfg.DatabaseQueryTimeout)
 	tripMetrics, err := telemetry.NewTripMetrics(serviceTelemetry.MeterProvider, tripRepo)
@@ -74,7 +74,7 @@ func New(ctx context.Context, cfg *config.Config) (*Container, error) {
 
 	createUsecase := createusecase.New(
 		tripRepo,
-		histroyRepo,
+		historyRepo,
 		idempotencyRepo,
 		txManager,
 		tripMetrics,
@@ -82,7 +82,7 @@ func New(ctx context.Context, cfg *config.Config) (*Container, error) {
 		cfg.IdempotencyTTL,
 	)
 	getUsecase := getusecase.New(tripRepo)
-	finishUsecase := finishusecase.New(tripRepo, histroyRepo, txManager, tripMetrics, serviceTelemetry.Logger)
+	finishUsecase := finishusecase.New(tripRepo, historyRepo, txManager, tripMetrics, serviceTelemetry.Logger)
 
 	createHandler := createhandler.NewHandler(createUsecase, serviceTelemetry.Logger)
 	getHandler := gethandler.NewHandler(getUsecase, serviceTelemetry.Logger)
@@ -107,7 +107,7 @@ func New(ctx context.Context, cfg *config.Config) (*Container, error) {
 			serviceTelemetry.Logger,
 		),
 		closeDatabase:   pool.Close,
-		shutdwonTimeout: cfg.ShutdownTimeout,
+		shutdownTimeout: cfg.ShutdownTimeout,
 		telemetry:       serviceTelemetry,
 		tripMetrics:     tripMetrics,
 	}, nil
@@ -140,7 +140,7 @@ func (c *Container) Run(ctx context.Context) error {
 			runErr = fmt.Errorf("run HTTP server: %w", err)
 		}
 	case <-ctx.Done():
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.WithoutCancel(ctx), c.shutdwonTimeout)
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.WithoutCancel(ctx), c.shutdownTimeout)
 		defer shutdownCancel()
 
 		shutdownErr := c.server.Shutdown(shutdownCtx)
@@ -152,7 +152,7 @@ func (c *Container) Run(ctx context.Context) error {
 	}
 
 	c.telemetry.Logger.Info("service stopped")
-	telemetryCtx, telemetryCancel := context.WithTimeout(context.WithoutCancel(ctx), c.shutdwonTimeout)
+	telemetryCtx, telemetryCancel := context.WithTimeout(context.WithoutCancel(ctx), c.shutdownTimeout)
 	defer telemetryCancel()
 
 	telemetryErr := errors.Join(c.tripMetrics.Close(), c.telemetry.Shutdown(telemetryCtx))
