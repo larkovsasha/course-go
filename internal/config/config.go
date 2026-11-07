@@ -24,6 +24,11 @@ type Config struct {
 	HTTPIdleTimeout               time.Duration
 	IdempotencyTTL                time.Duration
 	IdempotencyTTLCleanupInterval time.Duration
+	OTELServiceName               string
+	OTLPEndpoint                  string
+	OTLPProtocol                  string
+	OTELResourceAttributes        string
+	OTELTracesSampler             string
 }
 
 func GetConfig() (Config, error) {
@@ -58,7 +63,7 @@ func GetConfig() (Config, error) {
 	}
 
 	if minConns > maxConns {
-		return Config{}, errors.New("Database min connections have to be less or egual to max connections")
+		return Config{}, errors.New("database min connections must be less than or equal to max connections")
 	}
 
 	maxConnLifetime, err := duration("DATABASE_MAX_CONN_LIFETIME")
@@ -106,6 +111,34 @@ func GetConfig() (Config, error) {
 		return Config{}, err
 	}
 
+	otelServiceName, err := readField("OTEL_SERVICE_NAME")
+	if err != nil {
+		return Config{}, err
+	}
+
+	otlpEndpoint, err := readField("OTEL_EXPORTER_OTLP_ENDPOINT")
+	if err != nil {
+		return Config{}, err
+	}
+
+	otlpProtocol, err := readField("OTEL_EXPORTER_OTLP_PROTOCOL")
+	if err != nil {
+		return Config{}, err
+	}
+	if otlpProtocol != "http/protobuf" {
+		return Config{}, errors.New("otel exporter protocol must be http/protobuf")
+	}
+
+	otelResourceAttributes, err := readField("OTEL_RESOURCE_ATTRIBUTES")
+	if err != nil {
+		return Config{}, err
+	}
+
+	otelTracesSampler, err := readField("OTEL_TRACES_SAMPLER")
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
 		HTTPAddr:                      httpAddr,
 		DatabaseURL:                   databaseURL,
@@ -122,13 +155,18 @@ func GetConfig() (Config, error) {
 		HTTPIdleTimeout:               httpIdleTimeout,
 		IdempotencyTTL:                idempotencyTTL,
 		IdempotencyTTLCleanupInterval: idempotencyCleanupInterval,
+		OTELServiceName:               otelServiceName,
+		OTLPEndpoint:                  otlpEndpoint,
+		OTLPProtocol:                  otlpProtocol,
+		OTELResourceAttributes:        otelResourceAttributes,
+		OTELTracesSampler:             otelTracesSampler,
 	}, nil
 }
 
 func readField(name string) (string, error) {
 	val, exists := os.LookupEnv(name)
 	if !exists || val == "" {
-		return "", fmt.Errorf("Environment variable %s was not provided", name)
+		return "", fmt.Errorf("environment variable %s was not provided", name)
 	}
 	return val, nil
 }
@@ -140,11 +178,11 @@ func duration(name string) (time.Duration, error) {
 	}
 	parsed, err := time.ParseDuration(value)
 	if err != nil {
-		return 0, fmt.Errorf("Failed to parse variable %s: %w", name, err)
+		return 0, fmt.Errorf("parse variable %s: %w", name, err)
 	}
 
 	if parsed <= 0 {
-		return 0, fmt.Errorf("Variable %s have to be greater than zero", name)
+		return 0, fmt.Errorf("variable %s must be greater than zero", name)
 	}
 	return parsed, nil
 }
@@ -156,13 +194,12 @@ func amount(name string, lowerbound int32) (int32, error) {
 	}
 
 	parsed, err := strconv.ParseInt(value, 10, 32)
-
 	if err != nil {
-		return 0, fmt.Errorf("Failed to parse variable %s: %w", name, err)
+		return 0, fmt.Errorf("parse variable %s: %w", name, err)
 	}
 
 	if int32(parsed) < lowerbound {
-		return 0, fmt.Errorf("Variable %s have to be greater or equal than %d", name, lowerbound)
+		return 0, fmt.Errorf("variable %s must be greater than or equal to %d", name, lowerbound)
 	}
 
 	return int32(parsed), nil

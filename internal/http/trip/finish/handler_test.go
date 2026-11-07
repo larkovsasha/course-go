@@ -1,0 +1,32 @@
+package finish_test
+
+import (
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/google/uuid"
+	"go.uber.org/mock/gomock"
+
+	"github.com/larkovsasha/course-go/internal/domain/trip"
+	finishhandler "github.com/larkovsasha/course-go/internal/http/trip/finish"
+)
+
+func TestHandlerCompleted(t *testing.T) {
+	controller := gomock.NewController(t)
+	usecase := NewMockusecase(controller)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	handler := finishhandler.NewHandler(usecase, logger)
+	id := uuid.New()
+	usecase.EXPECT().Execute(gomock.Any(), id).Return(trip.Trip{}, trip.ErrTripCompleted)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/trips/"+id.String()+"/finish", nil)
+	recorder := httptest.NewRecorder()
+	handler.Handle(recorder, request, id)
+
+	if recorder.Code != http.StatusConflict {
+		t.Errorf("status = %d, want %d", recorder.Code, http.StatusConflict)
+	}
+}

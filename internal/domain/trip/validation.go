@@ -1,0 +1,16 @@
+package trip
+
+import "fmt"
+
+type ValidationError struct {
+	Field  string
+	Reason string
+}
+
+func (e ValidationError) Error() string {
+	if e.Field == "" {
+		return e.Reason
+	}
+
+	return fmt.Sprintf("%s: %s", e.Field, e.Reason)
+}
